@@ -8,8 +8,21 @@
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
       rel="stylesheet"
     />
+    <style>
+      /* Posicionar el logo en la esquina superior izquierda */
+      .logo {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        width: 50px; /* Tamaño del logo */
+        height: auto;
+      }
+    </style>
   </head>
   <body>
+    <a href="/contribuidores.html">
+      <img src="/imagenes/logo.jpg" alt="Logo" class="logo" />
+    </a>
     <div class="container mt-5">
       <!-- Botón de Cerrar Sesión -->
       <div class="d-flex justify-content-end">
@@ -19,7 +32,7 @@
       </div>
 
       <h1>Bienvenido, {{ user }}</h1>
-      <h2>Sorteos Disponibles</h2>
+      <h2>Los sorteos de los BeteBetes</h2>
 
       <div id="sorteos">
         {% for sorteo in sorteos %}

@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
 import os
+import random
 
 app = FastAPI()
 
@@ -14,6 +15,7 @@ app.add_middleware(SessionMiddleware, secret_key="mysecretkey")
 
 # Configuración para servir archivos estáticos (CSS, JS)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/imagenes", StaticFiles(directory="imagenes"), name="imagenes")
 
 # Configuración para usar plantillas (HTML)
 templates = Jinja2Templates(directory="templates")
@@ -45,41 +47,37 @@ def is_admin(username, password):
         return False
     return False
 
-# Función para leer los sorteos desde el archivo sorteos.txt
 def leer_sorteos():
     sorteos = []
     try:
         with open(SORTEOS_DB, "r") as f:
             for line in f:
-                # Intentamos desempaquetar los primeros 4 campos (sin participantes)
                 partes = line.strip().split("|")
-                if len(partes) == 4:
-                    nombre, descripcion, precio, sobre_regalo = partes
-                    participantes = []  # No hay participantes, asignar lista vacía
-                elif len(partes) == 5:
-                    nombre, descripcion, precio, sobre_regalo, participantes = partes
-                    participantes = participantes.split(",") if participantes else []
-                else:
-                    continue  # Si la línea no tiene el formato correcto, la ignoramos
-
-                sorteos.append({
-                    "nombre": nombre,
-                    "descripcion": descripcion,
-                    "precio": precio,
-                    "sobre_regalo": sobre_regalo,
-                    "participantes": participantes
-                })
+                if len(partes) >= 4:
+                    nombre, descripcion, precio, sobre_regalo = partes[:4]
+                    participantes = partes[4].split(",") if len(partes) > 4 else []
+                    inscripciones_abiertas = True if len(partes) > 5 and partes[5] == 'True' else False
+                    sorteos.append({
+                        "nombre": nombre,
+                        "descripcion": descripcion,
+                        "precio": precio,
+                        "sobre_regalo": sobre_regalo,
+                        "participantes": participantes,
+                        "inscripciones_abiertas": inscripciones_abiertas
+                    })
     except FileNotFoundError:
-        pass  # Si no existe el archivo, retornamos una lista vacía de sorteos
+        pass
     return sorteos
 
 
-# Función para escribir los sorteos en el archivo sorteos.txt
+
 def escribir_sorteos(sorteos):
     with open(SORTEOS_DB, "w") as f:
         for sorteo in sorteos:
-            participantes = ",".join(sorteo["participantes"])
-            f.write(f'{sorteo["nombre"]}|{sorteo["descripcion"]}|{sorteo["precio"]}|{sorteo["sobre_regalo"]}|{participantes}\n')
+            participantes_str = ",".join(sorteo["participantes"])
+            inscripciones_abiertas_str = 'True' if sorteo["inscripciones_abiertas"] else 'False'
+            f.write(f'{sorteo["nombre"]}|{sorteo["descripcion"]}|{sorteo["precio"]}|{sorteo["sobre_regalo"]}|{participantes_str}|{inscripciones_abiertas_str}\n')
+
 
 # Ruta POST para eliminar un sorteo (solo administradores)
 @app.post("/eliminar-sorteo")
@@ -141,6 +139,11 @@ async def home(request: Request):
     sorteos = leer_sorteos()
 
     return templates.TemplateResponse("index.html", {"request": request, "user": user, "sorteos": sorteos})
+
+@app.get("/contribuidores.html", response_class=HTMLResponse)
+async def contribuidores(request: Request):
+    return templates.TemplateResponse("contribuidores.html", {"request": request})
+
 
 # Ruta GET para mostrar el formulario de registro
 @app.get("/register-page", response_class=HTMLResponse)
@@ -240,9 +243,8 @@ async def modificar_sorteo(request: Request):
 
     return JSONResponse(status_code=200, content={"message": "Sorteo modificado con éxito"})
 
-import random
 
-# Ruta POST para iniciar el sorteo y hacer las asignaciones (solo administradores)
+
 @app.post("/empezar-sorteo")
 async def empezar_sorteo(request: Request):
     form_data = await request.form()
@@ -268,7 +270,7 @@ async def empezar_sorteo(request: Request):
     if len(participantes) < 2:
         return JSONResponse(status_code=400, content={"error": "Debe haber al menos dos participantes para iniciar el sorteo."})
 
-    # Desactivar inscripción de nuevos participantes
+    # Desactivar inscripción de nuevos participantes solo para este sorteo
     sorteo["inscripciones_abiertas"] = False
 
     # Asignar aleatoriamente los participantes
@@ -277,7 +279,7 @@ async def empezar_sorteo(request: Request):
     # Guardar las asignaciones en asignaciones.txt
     guardar_asignaciones(nombre_sorteo, asignaciones)
 
-    # Reescribir los sorteos para desactivar nuevas inscripciones
+    # Reescribir los sorteos para desactivar nuevas inscripciones solo para este sorteo
     escribir_sorteos(sorteos)
 
     return JSONResponse(status_code=200, content={"message": "Sorteo iniciado y participantes asignados con éxito."})
@@ -350,6 +352,19 @@ def guardar_asignaciones(nombre_sorteo, asignaciones):
     with open("asignaciones.txt", "a") as f:
         asignaciones_str = ",".join([f'"{a[0]}"-"{a[1]}"' for a in asignaciones])
         f.write(f'{nombre_sorteo}|{asignaciones_str}\n')
+
+@app.get("/resultados-sorteo/{nombre_sorteo}")
+async def obtener_resultados_sorteo(nombre_sorteo: str):
+    try:
+        with open("asignaciones.txt", "r") as f:
+            for line in f:
+                sorteo_nombre, asignaciones_str = line.strip().split("|")
+                if sorteo_nombre == nombre_sorteo:
+                    asignaciones = asignaciones_str.split(",")
+                    return JSONResponse(status_code=200, content={"resultados": asignaciones})
+        return JSONResponse(status_code=404, content={"error": "Sorteo no encontrado o no tiene asignaciones"})
+    except FileNotFoundError:
+        return JSONResponse(status_code=404, content={"error": "Archivo de asignaciones no encontrado"})
 
 
 # Ruta para que los participantes vean a quién les ha tocado

@@ -94,7 +94,13 @@
               class="btn btn-warning reiniciar-sorteo-btn"
               data-nombre-sorteo="{{ sorteo.nombre }}"
             >
-              Volver a empezar el sorteo
+              Reiniciar el sorteo
+            </button>
+            <button
+              class="btn btn-info ver-resultados-btn"
+              data-nombre-sorteo="{{ sorteo.nombre }}"
+            >
+              Ver resultados
             </button>
             {% else %}
             <button
@@ -189,6 +195,34 @@
         .querySelectorAll(".reiniciar-sorteo-btn")
         .forEach(function (button) {
           manejarSorteo(button, "/reiniciar-sorteo");
+        });
+      // Manejar el botón "Ver resultados"
+      document
+        .querySelectorAll(".ver-resultados-btn")
+        .forEach(function (button) {
+          button.addEventListener("click", async function (event) {
+            event.preventDefault();
+            const nombreSorteo = button.getAttribute("data-nombre-sorteo");
+
+            const response = await fetch(`/resultados-sorteo/${nombreSorteo}`, {
+              method: "GET",
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+              // Mostrar los resultados en un alert
+              const resultados = result.resultados.map((asignacion) =>
+                asignacion.replace(/"/g, "")
+              ); // Formatear las asignaciones
+              alert(
+                `Resultados del sorteo "${nombreSorteo}":\n` +
+                  resultados.join("\n")
+              );
+            } else {
+              alert(result.error);
+            }
+          });
         });
     </script>
   </body>
