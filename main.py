@@ -558,3 +558,8 @@ def authenticate_user(username, password):
     except FileNotFoundError:
         return False
     return False
+    
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))  # Utilizar el puerto proporcionado por Railway
+    uvicorn.run(app, host="0.0.0.0", port=port)
