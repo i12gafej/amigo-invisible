@@ -5,7 +5,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 from starlette.middleware.sessions import SessionMiddleware
-import uvicorn
 import os
 import random
 
@@ -559,10 +558,3 @@ def authenticate_user(username, password):
     except FileNotFoundError:
         return False
     return False
-    
-if __name__ == "__main__":
-    try:
-        port = int(os.environ.get("PORT", 8000))  # Usar puerto proporcionado por Railway
-        uvicorn.run(app, host="0.0.0.0", port=port)
-    except Exception as e:
-        print(f"Error al iniciar la aplicación: {str(e)}")
