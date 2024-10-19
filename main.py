@@ -38,7 +38,7 @@ def get_current_user(request: Request):
 # Función para verificar si el usuario es administrador
 def is_admin(username, password):
     try:
-        with open(ADMIN_DB, "r") as f:
+        with open(ADMIN_DB, "r", encoding='utf-8') as f:
             for line in f:
                 admin_user, admin_pass = line.strip().split(":")
                 if admin_user == username and admin_pass == password:
@@ -50,20 +50,29 @@ def is_admin(username, password):
 def leer_sorteos():
     sorteos = []
     try:
-        with open(SORTEOS_DB, "r") as f:
+        with open(SORTEOS_DB, "r", encoding='utf-8') as f:
             for line in f:
                 partes = line.strip().split("|")
                 if len(partes) >= 4:
                     nombre, descripcion, precio, sobre_regalo = partes[:4]
-                    participantes = partes[4].split(",") if len(partes) > 4 else []
-                    inscripciones_abiertas = True if len(partes) > 5 and partes[5] == 'True' else False
+                    
+                    # Verificar si el campo 'inscripciones_abiertas' está presente
+                    inscripciones_abiertas = False  # Valor por defecto
+                    if len(partes) > 4:
+                        inscripciones_abiertas = True if partes[4] == 'True' else False
+                    
+                    # Verificar si el campo de participantes está presente
+                    participantes = []
+                    if len(partes) > 5 and partes[5]:  # Verifica si partes[5] existe y no está vacío
+                        participantes = partes[5].split(",")
+                    
                     sorteos.append({
                         "nombre": nombre,
                         "descripcion": descripcion,
                         "precio": precio,
                         "sobre_regalo": sobre_regalo,
-                        "participantes": participantes,
-                        "inscripciones_abiertas": inscripciones_abiertas
+                        "inscripciones_abiertas": inscripciones_abiertas,
+                        "participantes": participantes,                        
                     })
     except FileNotFoundError:
         pass
@@ -71,12 +80,13 @@ def leer_sorteos():
 
 
 
+
 def escribir_sorteos(sorteos):
-    with open(SORTEOS_DB, "w") as f:
+    with open(SORTEOS_DB, "w", encoding='utf-8') as f:
         for sorteo in sorteos:
             participantes_str = ",".join(sorteo["participantes"])
             inscripciones_abiertas_str = 'True' if sorteo["inscripciones_abiertas"] else 'False'
-            f.write(f'{sorteo["nombre"]}|{sorteo["descripcion"]}|{sorteo["precio"]}|{sorteo["sobre_regalo"]}|{participantes_str}|{inscripciones_abiertas_str}\n')
+            f.write(f'{sorteo["nombre"]}|{sorteo["descripcion"]}|{sorteo["precio"]}|{sorteo["sobre_regalo"]}|{inscripciones_abiertas_str}|{participantes_str}\n')
 
 
 # Ruta POST para eliminar un sorteo (solo administradores)
@@ -189,7 +199,7 @@ async def crear_sorteo(request: Request):
 
     # Guardar el sorteo en el archivo sorteos.txt
     with open(SORTEOS_DB, "a") as f:
-        f.write(f"{nombre}|{descripcion}|{precio}|{sobre_regalo}\n")
+        f.write(f"{nombre}|{descripcion}|{precio}|{sobre_regalo}|{'True'}\n")
 
     return JSONResponse(status_code=200, content={"message": "Sorteo creado con éxito"})
 
@@ -220,6 +230,7 @@ async def modificar_sorteo(request: Request):
     descripcion = form_data.get("descripcion")
     precio = form_data.get("precio")
     sobre_regalo = form_data.get("sobre_regalo")
+    inscripciones_abiertas = form_data.get("inscripciones_abiertas")
     user = get_current_user(request)
 
     # Verificar si el usuario es administrador
@@ -236,6 +247,7 @@ async def modificar_sorteo(request: Request):
             sorteo["descripcion"] = descripcion
             sorteo["precio"] = precio
             sorteo["sobre_regalo"] = sobre_regalo
+            sorteo["inscripciones_abiertas"] = inscripciones_abiertas
             break
 
     # Reescribir los sorteos con los datos actualizados
@@ -333,14 +345,14 @@ def asignar_participantes(participantes):
 def eliminar_asignacion_existente(nombre_sorteo):
     try:
         # Leer todas las asignaciones del archivo
-        with open("asignaciones.txt", "r") as f:
+        with open("asignaciones.txt", "r", encoding='utf-8') as f:
             asignaciones = f.readlines()
 
         # Filtrar las asignaciones, eliminando las del sorteo actual
         nuevas_asignaciones = [line for line in asignaciones if not line.startswith(nombre_sorteo)]
 
         # Escribir las asignaciones restantes de vuelta al archivo
-        with open("asignaciones.txt", "w") as f:
+        with open("asignaciones.txt", "w", encoding='utf-8') as f:
             f.writelines(nuevas_asignaciones)
 
     except FileNotFoundError:
@@ -349,14 +361,14 @@ def eliminar_asignacion_existente(nombre_sorteo):
 
 # Función para guardar las asignaciones en asignaciones.txt
 def guardar_asignaciones(nombre_sorteo, asignaciones):
-    with open("asignaciones.txt", "a") as f:
+    with open("asignaciones.txt", "a", encoding='utf-8') as f:
         asignaciones_str = ",".join([f'"{a[0]}"-"{a[1]}"' for a in asignaciones])
         f.write(f'{nombre_sorteo}|{asignaciones_str}\n')
 
 @app.get("/resultados-sorteo/{nombre_sorteo}")
 async def obtener_resultados_sorteo(nombre_sorteo: str):
     try:
-        with open("asignaciones.txt", "r") as f:
+        with open("asignaciones.txt", "r", encoding='utf-8') as f:
             for line in f:
                 sorteo_nombre, asignaciones_str = line.strip().split("|")
                 if sorteo_nombre == nombre_sorteo:
@@ -373,7 +385,7 @@ async def obtener_resultados_sorteo(nombre_sorteo: str):
 async def ver_asignacion(request: Request, nombre_sorteo: str, participante: str):
     try:
         # Leer el archivo de asignaciones
-        with open("asignaciones.txt", "r") as f:
+        with open("asignaciones.txt", "r", encoding='utf-8') as f:
             for line in f:
                 sorteo_nombre, asignaciones_str = line.strip().split("|")
                 if sorteo_nombre == nombre_sorteo:
@@ -396,14 +408,14 @@ async def reiniciar_sorteo(nombre_sorteo: str):
     try:
         # Leer todas las asignaciones
         asignaciones = []
-        with open("asignaciones.txt", "r") as f:
+        with open("asignaciones.txt", "r", encoding='utf-8') as f:
             asignaciones = f.readlines()
 
         # Eliminar la asignación del sorteo correspondiente
         asignaciones = [line for line in asignaciones if not line.startswith(nombre_sorteo)]
 
         # Guardar las asignaciones restantes
-        with open("asignaciones.txt", "w") as f:
+        with open("asignaciones.txt", "w", encoding='utf-8') as f:
             f.writelines(asignaciones)
 
         # Leer los sorteos y asignar de nuevo
@@ -421,7 +433,7 @@ async def reiniciar_sorteo(nombre_sorteo: str):
         nueva_asignacion = asignar_participantes(participantes)  # Función que debes implementar para reasignar
 
         # Guardar la nueva asignación en el archivo
-        with open("asignaciones.txt", "a") as f:
+        with open("asignaciones.txt", "a", encoding='utf-8') as f:
             f.write(f'{nombre_sorteo}|"{"-".join(nueva_asignacion)}"\n')
 
         return JSONResponse(status_code=200, content={"message": "Sorteo reiniciado y participantes reasignados con éxito."})
@@ -483,7 +495,7 @@ async def register(request: Request):
         return JSONResponse(status_code=400, content={"error": "El nombre de usuario ya existe"})
 
     # Guardar el usuario en el archivo
-    with open(USER_DB, "a") as f:
+    with open(USER_DB, "a", encoding='utf-8') as f:
         f.write(f"{username}:{password}\n")
     
     request.session["user"] = username
@@ -500,7 +512,7 @@ async def logout(request: Request):
 # Función para verificar si un usuario existe
 def user_exists(username):
     try:
-        with open(USER_DB, "r") as f:
+        with open(USER_DB, "r", encoding='utf-8') as f:
             for line in f:
                 saved_username, _ = line.strip().split(":")
                 if saved_username == username:
@@ -538,7 +550,7 @@ async def inscribirse(request: Request):
 # Función para autenticar a un usuario
 def authenticate_user(username, password):
     try:
-        with open(USER_DB, "r") as f:
+        with open(USER_DB, "r", encoding='utf-8') as f:
             for line in f:
                 saved_username, saved_password = line.strip().split(":")
                 if saved_username == username and saved_password == password:
