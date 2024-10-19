@@ -21,7 +21,7 @@ app.mount("/imagenes", StaticFiles(directory="imagenes"), name="imagenes")
 templates = Jinja2Templates(directory="templates")
 
 # Expresión regular para validar los nombres de usuario
-username_pattern = re.compile(r"^[a-zA-Z()[\] ]*$")
+username_pattern = re.compile(r"^[a-zA-Z()ñ[\] ]*$")
 
 # Expresión regular para validar contraseñas (sin espacios ni saltos de línea)
 password_pattern = re.compile(r"^\S+$")
