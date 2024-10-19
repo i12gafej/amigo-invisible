@@ -1,19 +1,19 @@
 admin:123
-Abuela:5340
-Gabriel:2994
-Javierr:4114
-Mari Pili:9982
-Toñi:5677
-Cristi:8090
-Manolo:8402
-Pablo:3774
-Manu:1768
-Mapi:7389
-Curro:6290
-Paco:7275
-Cris (Jero):8803
-Jero:2539
-Borja:1866
-Ana:5893
-nuri:4417
-pedro pesti:3739
+Abuela:8082
+Gabriel:5242
+Javierr:5041
+Mari Pili:4566
+Toñi:1673
+Cristi:4709
+Manolo:7654
+Pablo:6906
+Manu:4412
+Mapi:2006
+Curro:5605
+Paco:2792
+Cris (Jero):1328
+Jero:3121
+Borja:4493
+Ana:1955
+nuri:1822
+pedro pesti:5002
