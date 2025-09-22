@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Organizador — Amigo Invisible (Hash cifrado)</title>
+<style>
+  :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif; }
+  body { margin:0; background:#0f172a; color:#eef2f7; }
+  header, main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  header { display:flex; align-items:center; gap:12px }
+  h1 { font-size: 24px; margin: 0; }
+  main { background:#0b1222; border-top:1px solid #1e293b; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:18px; }
+  textarea, input { width:100%; padding:10px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e5e7eb;}
+  textarea { min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .card { background:#0a1020; border:1px solid #1e293b; border-radius:12px; padding:16px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  button { padding:10px 14px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e5e7eb; cursor:pointer; }
+  table { width:100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { text-align:left; border-bottom:1px solid #1e293b; padding:8px; font-size:14px; }
+  .ok { color:#22c55e } .warn { color:#f59e0b } .err { color:#ef4444 }
+  code { background:#111827; padding:2px 6px; border-radius:6px; }
+  .help { color:#94a3b8; font-size: 13px; }
+  a { color:#93c5fd; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎁 Organizador — Amigo Invisible</h1>
+</header>
+<main>
+  <div class="grid">
+    <div class="card">
+      <h3>Participantes (uno por línea)</h3>
+      <textarea id="names" placeholder="Andrea
+Pablo
+Sofía"></textarea>
+      <div class="row">
+        <div style="flex:1">
+          <label>Nombre del grupo</label>
+          <input id="group" placeholder="Navidad 2025" />
+        </div>
+        <div style="flex:1">
+          <label>URL público del visor (<code>viewer.html</code>)</label>
+          <input id="baseUrl" placeholder="https://tu-dominio.xyz/viewer.html" />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Restricciones forzadas (opcional)</h3>
+      <textarea id="forced" placeholder="Andrea -> Sofía
+(Pablo sin restricción)"></textarea>
+      <p class="help">Formato: <code>Origen -> Destino</code> (una por línea). Significa “a Origen le toca Destino 100%”.</p>
+      <div class="row">
+        <div style="flex:1">
+          <label>Prefijo de teléfono (opcional, E.164 sin +)</label>
+          <input id="phonePrefix" placeholder="34" />
+        </div>
+        <div style="flex:1">
+          <label>Teléfonos (uno por línea, alineados a nombres)</label>
+          <textarea id="phones" placeholder="612345678
+699111222
+611222333"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cargar desde JSON -->
+  <div class="card" style="margin-top:18px">
+    <h3>Cargar desde JSON</h3>
+    <div class="row">
+      <input type="file" id="jsonFile" accept="application/json" />
+      <button id="btnLoadJSON">📥 Cargar JSON</button>
+    </div>
+    <p class="help">El JSON debe ser un array de objetos: <code>{ nombre, telefono?, restriccion? }</code>.  
+    Si <code>restriccion</code> tiene un nombre, se interpreta como “a <em>nombre</em> le toca <em>restriccion</em>”.</p>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <div class="row">
+      <button id="btnAssign">🎲 Generar reparto</button>
+      <button id="btnExport" disabled>⬇️ Exportar CSV</button>
+    </div>
+    <div id="status" style="margin-top:10px"></div>
+    <table id="results" style="display:none">
+      <thead><tr><th>Persona</th><th>Le toca</th><th>URL</th><th>WhatsApp</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+  // ===== utilidades base64url =====
+  const bytesToB64u = (bytes) => {
+    let bin = '';
+    bytes.forEach(b => bin += String.fromCharCode(b));
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/,'');
+  };
+  const strToBytes = (s) => new TextEncoder().encode(s);
+
+  // AES-GCM cifrar payload JSON → {ctB64u, keyB64u}
+  async function encryptPayload(payloadObj) {
+    const keyRaw = crypto.getRandomValues(new Uint8Array(32)); // 256-bit
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await crypto.subtle.importKey('raw', keyRaw, 'AES-GCM', false, ['encrypt']);
+    const data = strToBytes(JSON.stringify(payloadObj));
+    const cipher = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, data));
+    const ct = new Uint8Array(iv.length + cipher.length); // ct = iv || cipher
+    ct.set(iv, 0); ct.set(cipher, iv.length);
+    return { ctB64u: bytesToB64u(ct), keyB64u: bytesToB64u(keyRaw) };
+  }
+
+  // Parse básicos
+  function parseLines(el) {
+    return el.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  }
+  function parseForced(lines) {
+    const map = new Map();
+    for (const line of lines) {
+      const m = line.match(/^(.+?)\s*->\s*(.+)$/);
+      if (!m) throw new Error(`Restricción inválida: "${line}"`);
+      const from = m[1].trim(); const to = m[2].trim();
+      if (from === to) throw new Error(`No se permite autoasignación forzada: "${line}"`);
+      if (map.has(from)) throw new Error(`Duplicado de origen forzado: "${from}"`);
+      map.set(from, to);
+    }
+    return map;
+  }
+
+  // Permutación aleatoria con forzadas y sin autoasignaciones
+  function assignWithConstraints(names, forcedMap, maxTries = 5000) {
+    const n = names.length;
+    const setNames = new Set(names);
+
+    const forcedTargets = new Set();
+    for (const [from, to] of forcedMap) {
+      if (!setNames.has(from)) throw new Error(`Forzado "${from}" no está en nombres.`);
+      if (!setNames.has(to)) throw new Error(`Forzado "${to}" no está en nombres.`);
+      if (forcedTargets.has(to)) throw new Error(`Destino forzado repetido: "${to}".`);
+      forcedTargets.add(to);
+    }
+
+    for (let attempt = 1; attempt <= maxTries; attempt++) {
+      const available = new Set(names);
+      const result = new Map();
+      let ok = true;
+
+      for (const [from, to] of forcedMap) {
+        if (to === from || !available.has(to)) { ok = false; break; }
+        result.set(from, to);
+        available.delete(to);
+      }
+      if (!ok) continue;
+
+      const remaining = names.filter(x => !result.has(x));
+      shuffleInPlace(remaining);
+
+      function pickFor(i) {
+        if (i === remaining.length) return true;
+        const from = remaining[i];
+        const candidates = Array.from(available).filter(t => t !== from);
+        shuffleInPlace(candidates);
+        for (const to of candidates) {
+          result.set(from, to);
+          available.delete(to);
+          const left = remaining.length - i - 1;
+          if (left === 0 || notTrapped(remaining.slice(i+1), available)) {
+            if (pickFor(i + 1)) return true;
+          }
+          result.delete(from);
+          available.add(to);
+        }
+        return false;
+      }
+      function notTrapped(rem, avail) {
+        if (rem.length === 1) {
+          const last = rem[0];
+          return !(avail.size === 1 && avail.has(last));
+        }
+        return true;
+      }
+
+      if (pickFor(0) && result.size === n) return result;
+    }
+    throw new Error('No se encontró un reparto válido. Revisa las forzadas o reintenta.');
+  }
+
+  function shuffleInPlace(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+
+  // Generación de URLs y mensajes
+  async function generateLinks(assignMap, group, baseUrl, phonePrefix, phoneList) {
+    const rows = [];
+    const base = baseUrl.replace(/[#?].*$/, '');
+    const people = Array.from(assignMap.keys());
+    for (let idx = 0; idx < people.length; idx++) {
+      const from = people[idx];
+      const to = assignMap.get(from);
+      const payload = { v: 1, for: from, target: to, group };
+      const { ctB64u, keyB64u } = await encryptPayload(payload);
+      const url = `${base}#v=1&ct=${encodeURIComponent(ctB64u)}&k=${encodeURIComponent(keyB64u)}`;
+      const phoneRaw = (phoneList[idx] || '').replace(/\D/g,'');
+      const e164 = phoneRaw ? (phonePrefix ? `${phonePrefix}${phoneRaw}` : phoneRaw) : '';
+      const msg = `¡Hola, ${from}! 🎄 Te paso tu enlace secreto del Amigo Invisible (${group || 'grupo'}):
+${url}
+
+No lo compartas 😉`;
+      const wa = e164
+        ? `https://api.whatsapp.com/send?phone=${encodeURIComponent(e164)}&text=${encodeURIComponent(msg)}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+      rows.push({ from, to, url, wa, phone: e164 });
+    }
+    return rows;
+  }
+
+  function toCSV(rows) {
+    const head = ['Nombre','LeToca','TelefonoE164','URL','MensajeWhatsApp'];
+    const lines = [head.join(',')];
+    for (const r of rows) {
+      const msg = `¡Hola, ${r.from}! 🎄 Te paso tu enlace secreto del Amigo Invisible: ${r.url} No lo compartas 😉`;
+      const cells = [r.from, r.to, r.phone || '', r.url, msg];
+      lines.push(cells.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','));
+    }
+    return lines.join('\r\n');
+  }
+
+  // ===== UI wiring =====
+  const $ = sel => document.querySelector(sel);
+  const namesEl   = $('#names');
+  const forcedEl  = $('#forced');
+  const groupEl   = $('#group');
+  const baseUrlEl = $('#baseUrl');
+  const prefixEl  = $('#phonePrefix');
+  const phonesEl  = $('#phones');
+  const statusEl  = $('#status');
+  const btnAssign = $('#btnAssign');
+  const btnExport = $('#btnExport');
+  const table     = $('#results');
+  const tbody     = table.querySelector('tbody');
+
+  let lastRows = null;
+
+  btnAssign.addEventListener('click', async () => {
+    try {
+      statusEl.innerHTML = 'Generando reparto…';
+      tbody.innerHTML = '';
+      table.style.display = 'none';
+      btnExport.disabled = true;
+
+      const names = parseLines(namesEl);
+      if (names.length < 2) throw new Error('Necesitas al menos 2 participantes.');
+      if ((new Set(names)).size !== names.length) throw new Error('Hay nombres duplicados.');
+
+      const forcedLines = parseLines(forcedEl);
+      const forcedMap = parseForced(forcedLines);
+
+      for (const [f, t] of forcedMap) {
+        if (!names.includes(f)) throw new Error(`"${f}" (forzado) no está en participantes.`);
+        if (!names.includes(t)) throw new Error(`"${t}" (forzado) no está en participantes.`);
+      }
+
+      const assignMap = assignWithConstraints(names, forcedMap);
+
+      const group = groupEl.value.trim();
+      const baseUrl = baseUrlEl.value.trim();
+      if (!baseUrl) throw new Error('Falta el URL del visor público (viewer.html).');
+
+      const phonePrefix = prefixEl.value.trim().replace(/^\+/, '');
+      const phoneList = parseLines(phonesEl);
+      while (phoneList.length < names.length) phoneList.push('');
+
+      const rows = await generateLinks(assignMap, group, baseUrl, phonePrefix, phoneList);
+
+      for (const r of rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.from}</td>
+          <td>${r.to}</td>
+          <td><a href="${r.url}" target="_blank" rel="noopener">Abrir</a></td>
+          <td><a href="${r.wa}" target="_blank" rel="noopener">Enviar</a></td>
+        `;
+        tbody.appendChild(tr);
+      }
+      table.style.display = '';
+      btnExport.disabled = false;
+      lastRows = rows;
+      statusEl.innerHTML = `<span class="ok">Listo.</span> Se han generado ${rows.length} enlaces únicos.`;
+    } catch (e) {
+      statusEl.innerHTML = `<span class="err">${e.message}</span>`;
+    }
+  });
+
+  btnExport.addEventListener('click', () => {
+    if (!lastRows) return;
+    const csv = toCSV(lastRows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'amigo_invisible_enlaces.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  // ===== Carga desde JSON =====
+  function populateFromParsedData(list) {
+    const cleaned = list.map((r, idx) => {
+      const nombre = String((r.nombre ?? '')).trim();
+      if (!nombre) throw new Error(`Elemento ${idx+1}: falta "nombre".`);
+      const telefono = r.telefono == null ? '' : String(r.telefono).trim();
+      const restr = r.restriccion == null ? '' : String(r.restriccion).trim();
+      return { nombre, telefono, restr };
+    });
+
+    const nombres = cleaned.map(r => r.nombre);
+    const telefonos = cleaned.map(r => r.telefono);
+    const forzadas = cleaned.filter(r => r.restr !== '').map(r => `${r.nombre} -> ${r.restr}`);
+
+    $('#names').value  = nombres.join('\n');
+    $('#phones').value = telefonos.join('\n');
+    $('#forced').value = forzadas.join('\n');
+
+    const dupCheck = new Set(nombres);
+    if (dupCheck.size !== nombres.length) {
+      throw new Error('Hay nombres duplicados en el JSON.');
+    }
+  }
+
+  async function loadParticipantsJSON(file) {
+    const text = await file.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error('El archivo no es un JSON válido.');
+    }
+    if (!Array.isArray(data)) throw new Error('El JSON debe ser un array de objetos.');
+    populateFromParsedData(data);
+  }
+
+  (function wireJSONLoader(){
+    const fileEl = $('#jsonFile');
+    const btnEl  = $('#btnLoadJSON');
+    if (!fileEl || !btnEl) return;
+
+    btnEl.addEventListener('click', async () => {
+      try {
+        statusEl.innerHTML = 'Cargando JSON…';
+        if (!fileEl.files || fileEl.files.length === 0) {
+          throw new Error('Selecciona un archivo .json primero.');
+        }
+        await loadParticipantsJSON(fileEl.files[0]);
+        statusEl.innerHTML = '<span class="ok">JSON cargado. Revisa y pulsa “Generar reparto”.</span>';
+      } catch (e) {
+        statusEl.innerHTML = `<span class="err">${e.message}</span>`;
+      }
+    });
+  })();
+</script>
+</body>
+</html>
