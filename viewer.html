@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Amigo Invisible</title>
+<style>
+  :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif; }
+  body { margin: 0; background: #f6f7f9; color: #111; }
+  main { max-width: 640px; margin: 8vh auto; background: #fff; padding: 24px; border-radius: 12px;
+         box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+  h1 { margin: 0 0 8px; font-size: 28px; }
+  .muted { color:#666; margin:0 0 16px; }
+  .card { padding:16px; border:1px solid #e6e8ec; border-radius:10px; background:#fafbfc }
+  .big { font-size: 22px; }
+  .err { color:#b00020; font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎁 Amigo Invisible</h1>
+  <p class="muted" id="group"></p>
+  <div id="content" class="card big">Descifrando…</div>
+  <p class="muted" style="margin-top:16px">Consejo: no compartas este enlace.</p>
+</main>
+<script>
+  const b64uToBytes = (s) => {
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = s.length % 4 ? 4 - (s.length % 4) : 0;
+    s += '='.repeat(pad);
+    const bin = atob(s);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  };
+  const bytesToStr = (b) => new TextDecoder().decode(b);
+
+  (async () => {
+    const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+    const q = new URLSearchParams(hash);
+    const ver = q.get('v') || '1';
+    const ct = q.get('ct');
+    const k  = q.get('k');
+
+    const contentEl = document.getElementById('content');
+    const groupEl = document.getElementById('group');
+
+    if (ver !== '1' || !ct || !k) {
+      contentEl.innerHTML = '<span class="err">Enlace inválido.</span>';
+      return;
+    }
+
+    try {
+      const ctBytes = b64uToBytes(ct);
+      const keyBytes = b64uToBytes(k);
+      const iv = ctBytes.slice(0, 12);
+      const data = ctBytes.slice(12);
+      const cryptoKey = await crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['decrypt']);
+      const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, data);
+      const payload = JSON.parse(bytesToStr(plainBuf));
+
+      if (payload.group) groupEl.textContent = `Grupo: ${payload.group}`;
+      const you = payload.for || 'Participante';
+      const target = payload.target || '—';
+      contentEl.innerHTML = `
+        <div>Hola <strong>${you}</strong> 👋</div>
+        <div>Te ha tocado: <strong>${target}</strong>.</div>
+      `;
+
+      // Si quieres, limpia el hash tras mostrar (para mitigar reenvíos)
+      // setTimeout(() => history.replaceState(null, '', location.pathname + location.search), 500);
+
+    } catch (e) {
+      contentEl.innerHTML = '<span class="err">No se pudo descifrar el enlace (¿dañado o caducado?).</span>';
+    }
+  })();
+</script>
+</body>
+</html>
