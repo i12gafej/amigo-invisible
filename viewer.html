@@ -142,91 +142,143 @@
     btn.addEventListener('click', renderStep3);
   }
 
-  function renderStep3(){
-    mount(flow, html`
-      <div class="msg">
-        <p>Además de cotilla, mentiroso. Creo que te estás colando. Pero bueno, ya para finalizar, te dejo que metas tu número de tarjeta para poder redimirte de tus pecados.</p>
-        <div class="row" style="margin-top:10px">
-          <div class="field">
-            <label>Número de tarjeta</label>
-            <input id="ccNumber" type="tel" inputmode="numeric" autocomplete="cc-number" placeholder="1234 5678 9012 3456" maxlength="23" />
-          </div>
-          <div class="field">
-            <label>Nombre del titular</label>
-            <input id="ccName" type="text" autocomplete="cc-name" placeholder="Nombre Apellidos" />
-          </div>
-          <div class="field">
-            <label>Caducidad (MM/AA)</label>
-            <input id="ccExpiry" type="text" inputmode="numeric" placeholder="MM/AA" maxlength="5" />
-          </div>
-          <div class="field">
-            <label>CVV</label>
-            <input id="ccCVV" type="password" inputmode="numeric" placeholder="123" maxlength="4" />
-          </div>
+function renderStep3(){
+  mount(flow, html`
+    <div class="msg">
+      <p>Además de cotilla, mentiroso. Creo que te estás colando. Pero bueno, ya para finalizar, te dejo que metas tu número de tarjeta para poder redimirte de tus pecados.</p>
+      <div class="row" style="margin-top:10px">
+        <div class="field">
+          <label>Número de tarjeta</label>
+          <input id="ccNumber" type="tel" inputmode="numeric" autocomplete="cc-number" placeholder="1234 5678 9012 3456" maxlength="23" />
         </div>
-        <div class="hr"></div>
-        <div class="row">
-          <button class="btn" id="btnPay" disabled>Pagar para saberlo YA</button>
-          <button class="btn" id="btnNoCard">No tengo tarjeta</button>
+        <div class="field">
+          <label>Nombre del titular</label>
+          <input id="ccName" type="text" autocomplete="cc-name" placeholder="Nombre Apellidos" />
         </div>
-        <p id="inlineErr" class="errText hidden">Se siente, mete tus datos</p>
+        <div class="field">
+          <label>Caducidad (MM/AA)</label>
+          <input id="ccExpiry" type="text" inputmode="numeric" placeholder="MM/AA" maxlength="5" />
+        </div>
+        <div class="field">
+          <label>CVV</label>
+          <input id="ccCVV" type="password" inputmode="numeric" placeholder="123" maxlength="4" />
+        </div>
       </div>
-    `);
+      <div class="hr"></div>
+      <div class="row">
+        <button class="btn" id="btnPay" disabled>Pagar para saberlo YA</button>
+        <button class="btn" id="btnNoCard">No tengo tarjeta</button>
+      </div>
+      <p id="inlineErr" class="errText hidden">Se siente, mete tus datos</p>
+    </div>
+  `);
 
-    const numberEl = document.getElementById('ccNumber');
-    const nameEl = document.getElementById('ccName');
-    const expiryEl = document.getElementById('ccExpiry');
-    const cvvEl = document.getElementById('ccCVV');
-    const btnPay = document.getElementById('btnPay');
-    const btnNo = document.getElementById('btnNoCard');
-    const inlineErr = document.getElementById('inlineErr');
+  const numberEl = document.getElementById('ccNumber');
+  const nameEl   = document.getElementById('ccName');
+  const expiryEl = document.getElementById('ccExpiry');
+  const cvvEl    = document.getElementById('ccCVV');
+  const btnPay   = document.getElementById('btnPay');
+  const btnNo    = document.getElementById('btnNoCard');
+  const inlineErr= document.getElementById('inlineErr');
 
-    const digitsOnly = s => s.replace(/\D+/g,'');
-    const luhn = (num) => {
-      const arr = digitsOnly(num).split('').reverse().map(x=>+x);
-      if (arr.length < 13 || arr.length > 19) return false;
-      let sum=0; for(let i=0;i<arr.length;i++){ let n=arr[i]; if(i%2===1){ n*=2; if(n>9)n-=9;} sum+=n; }
-      return sum%10===0; };
-    const validExpiry = (s) => {
-      if(!/^\d{2}\/(\d{2})$/.test(s)) return false;
-      const [mm, aa] = s.split('/').map(Number);
-      return mm>=1 && mm<=12; };
-    const validCVV = (s) => /^(\d{3}|\d{4})$/.test(s);
-    const validName = (s) => s.trim().length>=2;
+  const digitsOnly = s => (s || '').replace(/\D+/g,'');
+  const detectBrand = (numDigits) => {
+    if (/^3[47]\d{13}$/.test(numDigits)) return 'amex';               // 15
+    if (/^4\d{12}(\d{3}){0,2}$/.test(numDigits)) return 'visa';       // 13–19
+    if (/^(5[1-5]\d{14}|2(2[2-9]\d{12}|[3-6]\d{13}|7[01]\d{12}|720\d{12}))$/.test(numDigits)) return 'mc'; // 16
+    if (/^6(011\d{12}|5\d{14}|4[4-9]\d{13})$/.test(numDigits)) return 'discover'; // 16
+    if (/^(50\d{10,17}|5[6-9]\d{10,17}|6\d{11,18})$/.test(numDigits)) return 'maestro'; // 12–19
+    return 'unknown';
+  };
+  const luhn = (numDigits) => {
+    const arr = numDigits.split('').reverse().map(x=>+x);
+    if (arr.length < 13 || arr.length > 19) return false;
+    let sum=0;
+    for(let i=0;i<arr.length;i++){ let n=arr[i]; if(i%2===1){ n*=2; if(n>9)n-=9;} sum+=n; }
+    return sum%10===0;
+  };
+  const validCard = (val) => {
+    const d = digitsOnly(val);
+    const brand = detectBrand(d);
+    // Aceptamos unknown si pasa Luhn y longitud 13–19 (para no ser demasiado restrictivos)
+    const lenOK = d.length >= 13 && d.length <= 19;
+    return { ok: lenOK && luhn(d), brand, digits: d };
+  };
+  const validExpiry = (s) => {
+    if(!/^\d{2}\/\d{2}$/.test(s)) return false;
+    const [mm, aa] = s.split('/').map(Number);
+    if (mm < 1 || mm > 12) return false;
+    const year = 2000 + aa;
+    const now = new Date();
+    const curY = now.getFullYear(), curM = now.getMonth() + 1;
+    // válido si fecha es >= mes actual (no caducada)
+    return (year > curY) || (year === curY && mm >= curM);
+  };
+  const validCVV = (s, brand) => {
+    if (brand === 'amex') return /^\d{4}$/.test(s);
+    return /^\d{3}$/.test(s);
+  };
+  const validName = (s) => s && s.trim().length >= 2;
 
-    const update = () => {
-      state.card.number = numberEl.value;
-      state.card.name   = nameEl.value;
-      state.card.expiry = expiryEl.value;
-      state.card.cvv    = cvvEl.value;
-      const ok = luhn(state.card.number) && validName(state.card.name) && validExpiry(state.card.expiry) && validCVV(state.card.cvv);
-      btnPay.disabled = !ok;
-      inlineErr.classList.add('hidden');
-    };
+  const formatNumber = (rawVal) => {
+    const d = digitsOnly(rawVal).slice(0,19);
+    const brand = detectBrand(d);
+    if (brand === 'amex') {
+      // 4-6-5
+      return d.replace(/^(\d{0,4})(\d{0,6})(\d{0,5}).*$/, (_,a,b,c)=>[a,b,c].filter(Boolean).join(' '));
+    }
+    // bloques de 4
+    return d.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+  };
 
-    numberEl.addEventListener('input', (e)=>{
-      const raw = digitsOnly(e.target.value).slice(0,19);
-      e.target.value = raw.replace(/(.{4})/g,'$1 ').trim();
-      update();
-    });
-    expiryEl.addEventListener('input', (e)=>{
-      let v = e.target.value.replace(/[^\d]/g,'').slice(0,4);
-      if (v.length>=3) v = v.slice(0,2) + '/' + v.slice(2);
-      e.target.value = v; update();
-    });
-    cvvEl.addEventListener('input', update);
-    nameEl.addEventListener('input', update);
+  const update = () => {
+    state.card.number = numberEl.value;
+    state.card.name   = nameEl.value;
+    state.card.expiry = expiryEl.value;
+    state.card.cvv    = cvvEl.value;
 
-    btnNo.addEventListener('click', ()=>{ inlineErr.classList.remove('hidden'); });
-    btnPay.addEventListener('click', renderStep4);
-  }
+    const card = validCard(state.card.number);
+    // Ajustar placeholder/maxlength CVV por marca
+    if (card.brand === 'amex') {
+      cvvEl.maxLength = 4;
+      cvvEl.placeholder = '1234';
+    } else {
+      cvvEl.maxLength = 3;
+      cvvEl.placeholder = '123';
+    }
+
+    const ok = card.ok && validName(state.card.name) && validExpiry(state.card.expiry) && validCVV(state.card.cvv, card.brand);
+    btnPay.disabled = !ok;
+    inlineErr.classList.add('hidden');
+  };
+
+  numberEl.addEventListener('input', (e)=>{
+    e.target.value = formatNumber(e.target.value);
+    update();
+  });
+  expiryEl.addEventListener('input', (e)=>{
+    let v = e.target.value.replace(/[^\d]/g,'').slice(0,4);
+    if (v.length>=3) v = v.slice(0,2) + '/' + v.slice(2);
+    e.target.value = v;
+    update();
+  });
+  cvvEl.addEventListener('input', update);
+  nameEl.addEventListener('input', update);
+
+  btnNo.addEventListener('click', ()=>{ inlineErr.classList.remove('hidden'); });
+  btnPay.addEventListener('click', renderStep4);
+
+  // primera evaluación
+  update();
+}
+
 
   function renderStep4(){
     mount(flow, html`
       <div class="msg">
         Mira, esto es para matarte. No te voy a cobrar na pero en fin, solo quiero que sepas que todo este empeño que has puesto para llegar hasta aquí sea el mismo para el cariño que le vayas a poner a tu regalo 😘
         <div class="center" style="margin-top:12px">
-          <button class="btn" id="btnBack">Vale, me ha quedado claro :( (cara decepcionado)</button>
+          <button class="btn" id="btnBack">Vale, me ha quedado claro 😔</button>
         </div>
       </div>
     `);
@@ -238,8 +290,8 @@
       <div class="msg">
         <p>No pasa nada, te queremos igualmente.</p>
         <div class="row">
-          <button class="btn" id="btnYes">Yo también te quiero</button>
-          <button class="btn" id="btnNo">No te quiero nada</button>
+          <button class="btn" id="btnYes">Yo también te quiero 🥰</button>
+          <button class="btn" id="btnNo">No te quiero nada 🤬</button>
         </div>
         <div id="music" style="margin-top:12px"></div>
       </div>
